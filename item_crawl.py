@@ -12,13 +12,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # 저장 폴더
-SAVE_DIR = "./data"
+SAVE_DIR = "/Users/minair/pme10/data/"
 JSONL_DIR = os.path.join(SAVE_DIR, "jsonl")
 IMAGE_DIR = os.path.join(SAVE_DIR, "image")  
 
 # 사이트 기본 상수
 BASE = "https://www.musinsa.com"
-NUM_COLLECT = 2 # 세부카테고리별 수집 개수 for test
+NUM_COLLECT = 20 # 세부카테고리별 수집 개수 for test
 
 # 스크롤/대기
 SCROLL_ROUNDS = 8
@@ -46,7 +46,7 @@ class ItemRow:
     item_url: str
     brand: str
     price: str
-    color: List[str]
+    # color: List[str]
     img_dir: List[str]      
     img_url: List[str]       
     
@@ -168,7 +168,7 @@ def collect_subcategories(exclude_subcats, driver) -> List[Tuple[str, str]]:
             exclude_names = exclude_subcats.get('names', [])
             
             if cid in exclude_ids or cname in exclude_names:
-                print(f"    🙅 제외: {cid} {cname}")
+                print(f"🙅 제외: {cid} {cname}")
                 continue
 
             subs.append((cid, cname))
@@ -182,7 +182,71 @@ def collect_subcategories(exclude_subcats, driver) -> List[Tuple[str, str]]:
         key = f"{cid}|{cname}"
         if key not in seen:
             seen.add(key); uniq.append((cid, cname))
+    print(f"🔗 subcategories: {uniq}")
     return uniq
+
+# def collect_subcategories(exclude_subcats, driver) -> List[Tuple[str, str]]:
+#     """
+#     탭 컨테이너(data-mds=TabText) 안의 2뎁스 세부카테고리만 수집.
+#     '전체' 및 data-category-id == main_cat_name_CODE(001) 제외.
+#     return: [(category_id, category_name)]
+#     """
+#     def _norm(s: str) -> str:
+#         s = (s or "").strip()
+#         return re.sub(r"\s+", " ", s)
+
+#     subs: List[Tuple[str, str]] = []
+
+#     try:
+#         # 탭 컨테이너가 렌더될 때까지 대기
+#         WebDriverWait(driver, 8).until(
+#             EC.presence_of_element_located((By.CSS_SELECTOR, '[data-mds="TabText"]'))
+#         )
+#         # 탭 컨테이너 내부의 카테고리 탭만 대상
+#         nodes = driver.find_elements(
+#             By.CSS_SELECTOR,
+#             '[data-mds="TabText"] [data-button-id="category"]'
+#         )
+#         for n in nodes:
+#             cid = (n.get_attribute("data-category-id") or "").strip()
+#             cname_full = (n.get_attribute("data-category-name") or "").strip()
+#             if '|' in cname_full:
+#                 cname = cname_full.split("|"[-1])
+#             else:
+#                 cname = cname_full
+                
+#             if not cname:
+#                 cname = _norm(n.text)
+
+#             # '전체'(텍스트) 제외 + '001'(루트 코드) 제외
+#             if not cid or cid == main_cat_id or cname == "전체":
+#                 continue
+
+#             # 6자리 카테고리 ID만 허용
+#             if not re.fullmatch(r"\d{6}", cid):
+#                 continue
+            
+#             # ✅ 제외 목록 체크
+#             exclude_ids = exclude_subcats.get('ids', [])
+#             exclude_names = exclude_subcats.get('names', [])
+            
+#             if cid in exclude_ids or cname in exclude_names:
+#                 print(f"🙅 제외: {cid} {cname}")
+#                 continue
+
+#             subs.append((cid, cname))
+
+#     except Exception:
+#         pass
+
+#     # 중복 제거(순서 보존)
+#     uniq, seen = [], set()
+#     for cid, cname in subs:
+#         key = f"{cid}|{cname}"
+#         if key not in seen:
+#             seen.add(key); uniq.append((cid, cname))
+#     print(f"🔗 subcategories: {uniq}")
+#     return uniq
 
 def click_subcategory(driver, cat_id: str, timeout: float = 6.0) -> bool:
     """
@@ -280,239 +344,6 @@ def collect_list_minimals_unique(driver, need: int):
 
     return results[:need]
 
-
-
-# ========= 옵션: "컬러"만 안전하게 추출 =========
-_COLOR_WORDS = [
-    # 한글/영문 색상 키워드(대표적인 것들 + '라이트/다크' 수식 포함)
-    "블랙","화이트","아이보리","베이지","브라운","그레이","라이트 그레이","차콜","네이비","블루","스카이","옐로우",
-    "오렌지","레드","핑크","퍼플","보라","그린","카키","올리브","민트","버건디","크림","코코아","실버","골드",
-    "라이트","라이트블루","라이트 핑크","다크","딥","샌드","모카","와인","탄","카멜","청록","청색","군청","연청","진청",
-    # 영문
-    "black","white","ivory","beige","brown","gray","grey","charcoal","navy","blue","sky","yellow","orange","red","pink",
-    "purple","green","khaki","olive","mint","burgundy","cream","silver","gold","tan","camel","wine","sand","mocha","teal"
-]
-_SIZE_PATTERN = re.compile(
-    r"^\s*(?:XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|[\d]{2,3}|[2-5]XL|Free|FREE|F|사이즈|Size|size|cm|CM)\s*$"
-)
-
-def looks_like_color(text: str) -> bool:
-    t = (text or "").strip()
-    if not t: return False
-    if _SIZE_PATTERN.match(t):
-        return False
-    # 색 단서가 하나라도 들어가면 컬러로 간주 (너무 빡세면 누락됨)
-    for w in _COLOR_WORDS:
-        if w.lower() in t.lower():
-            return True
-    # 색상칩 없는 '단색명'도 허용 (한글 1~10자)
-    if re.search(r"[가-힣A-Za-z]{1,10}", t) and len(t) <= 20:
-        return True
-    return False
-
-def extract_colors(driver) -> List[str]:
-    """
-    무신사 상세페이지 '컬러' 드롭다운에서 색상명 추출
-    실제 DOM 구조에 맞춰 개선된 버전
-    """
-    import time, random, re
-    colors: List[str] = []
-
-    def _clean(txt: str) -> str:
-        if not txt: return ""
-        txt = re.sub(r"\s*\(.*?\)\s*$", "", (txt or "").strip())  # (품절) 등 꼬리 제거
-        txt = re.sub(r"\s+", " ", txt)
-        return txt
-
-    def _grab_colors_from_dropdown() -> List[str]:
-        """열린 드롭다운에서 색상 추출"""
-        found = []
-        
-        try:
-            # 1️⃣ data-state="open"인 드롭다운 메뉴 찾기
-            open_menu = driver.find_element(
-                By.CSS_SELECTOR, 
-                '[data-mds="StaticDropdownMenuContent"][data-state="open"]'
-            )
-            
-            # 2️⃣ 메뉴 내부의 모든 옵션 아이템 찾기
-            # data-mds="StaticDropdownMenuItem" 또는 role="option"
-            option_items = open_menu.find_elements(
-                By.CSS_SELECTOR,
-                '[data-mds="StaticDropdownMenuItem"], [role="option"]'
-            )
-            
-            print(f"    [DEBUG] Found {len(option_items)} option items")
-            
-            for item in option_items:
-                try:
-                    # 방법 1: data-button-name 속성에서 추출
-                    color_name = item.get_attribute("data-button-name")
-                    if color_name and color_name not in ["none", ""]:
-                        cleaned = _clean(color_name)
-                        if cleaned and looks_like_color(cleaned):
-                            found.append(cleaned)
-                            print(f"    [DEBUG] Color from data-button-name: {cleaned}")
-                            continue
-                    
-                    # 방법 2: aria-label에서 추출
-                    aria_label = item.get_attribute("aria-label")
-                    if aria_label:
-                        cleaned = _clean(aria_label)
-                        if cleaned and looks_like_color(cleaned):
-                            found.append(cleaned)
-                            print(f"    [DEBUG] Color from aria-label: {cleaned}")
-                            continue
-                    
-                    # 방법 3: 내부 텍스트에서 추출
-                    # span이나 div 안의 텍스트 찾기
-                    text_elements = item.find_elements(
-                        By.CSS_SELECTOR,
-                        'span[data-mds="Typography"], div[class*="text"], span'
-                    )
-                    for txt_el in text_elements:
-                        text = _clean(txt_el.text)
-                        if text and looks_like_color(text):
-                            found.append(text)
-                            print(f"    [DEBUG] Color from text: {text}")
-                            break
-                    
-                    # 방법 4: 전체 텍스트 내용
-                    if not found or len(found) == 0:
-                        full_text = _clean(item.text)
-                        if full_text and looks_like_color(full_text):
-                            found.append(full_text)
-                            print(f"    [DEBUG] Color from full text: {full_text}")
-                            
-                except Exception as e:
-                    print(f"    [DEBUG] Error extracting from item: {e}")
-                    continue
-                    
-        except Exception as e:
-            print(f"    [DEBUG] Error finding dropdown: {e}")
-            
-        return found
-
-    # Step 1: 이미 열려있는지 확인
-    try:
-        existing_menu = driver.find_element(
-            By.CSS_SELECTOR,
-            '[data-mds="StaticDropdownMenuContent"][data-state="open"]'
-        )
-        if existing_menu:
-            print("    [DEBUG] Dropdown already open")
-            colors = _grab_colors_from_dropdown()
-    except:
-        print("    [DEBUG] Dropdown not open, will try to open it")
-
-    # Step 2: 열려있지 않으면 클릭해서 열기
-    if not colors:
-        print("    [DEBUG] Attempting to open color dropdown...")
-        
-        # 우선순위 1: '컬러' 드롭다운 트리거 (가장 정확)
-        selectors_to_try = [
-            # 가장 구체적인 선택자부터
-            'div[data-section-name*="컬러"] input[data-mds="DropdownTriggerInput"]',
-            'div[data-section-name*="color"] input[data-mds="DropdownTriggerInput"]',
-            '[data-button-name*="컬러"] input[data-mds="DropdownTriggerInput"]',
-            'input[data-mds="DropdownTriggerInput"][placeholder*="컬러"]',
-            'input[data-mds="DropdownTriggerInput"][placeholder*="color"]',
-        ]
-        
-        clicked = False
-        for selector in selectors_to_try:
-            try:
-                triggers = driver.find_elements(By.CSS_SELECTOR, selector)
-                print(f"    [DEBUG] Found {len(triggers)} triggers with selector: {selector}")
-                
-                for trigger in triggers:
-                    try:
-                        # 화면에 보이도록 스크롤
-                        driver.execute_script(
-                            "arguments[0].scrollIntoView({block:'center', behavior:'instant'});", 
-                            trigger
-                        )
-                        time.sleep(0.3)
-                        
-                        # 클릭 시도
-                        try:
-                            driver.execute_script("arguments[0].click();", trigger)
-                        except:
-                            trigger.click()
-                        
-                        time.sleep(0.8)  # 드롭다운이 열릴 시간
-                        
-                        # 드롭다운이 열렸는지 확인
-                        try:
-                            driver.find_element(
-                                By.CSS_SELECTOR,
-                                '[data-mds="StaticDropdownMenuContent"][data-state="open"]'
-                            )
-                            print(f"    [DEBUG] Successfully opened dropdown!")
-                            clicked = True
-                            break
-                        except:
-                            print(f"    [DEBUG] Click didn't open dropdown, trying next...")
-                            continue
-                            
-                    except Exception as e:
-                        print(f"    [DEBUG] Failed to click trigger: {e}")
-                        continue
-                
-                if clicked:
-                    break
-                    
-            except Exception as e:
-                print(f"    [DEBUG] Selector {selector} failed: {e}")
-                continue
-        
-        # 클릭 성공했으면 다시 추출 시도
-        if clicked:
-            time.sleep(0.5)
-            colors = _grab_colors_from_dropdown()
-
-    # Step 3: 여전히 못 찾았으면 XPath로 시도
-    if not colors:
-        print("    [DEBUG] Trying XPath approach...")
-        try:
-            xpath_triggers = driver.find_elements(
-                By.XPATH,
-                "//div[contains(text(),'컬러')]//ancestor::div[1]//input | "
-                "//label[contains(text(),'컬러')]//following-sibling::input | "
-                "//span[contains(text(),'컬러')]//ancestor::div[contains(@class,'select') or contains(@class,'dropdown')]//input"
-            )
-            
-            print(f"    [DEBUG] Found {len(xpath_triggers)} triggers via XPath")
-            
-            for trigger in xpath_triggers:
-                try:
-                    driver.execute_script(
-                        "arguments[0].scrollIntoView({block:'center'});", 
-                        trigger
-                    )
-                    time.sleep(0.3)
-                    driver.execute_script("arguments[0].click();", trigger)
-                    time.sleep(0.8)
-                    
-                    colors = _grab_colors_from_dropdown()
-                    if colors:
-                        break
-                except:
-                    continue
-                    
-        except Exception as e:
-            print(f"    [DEBUG] XPath approach failed: {e}")
-
-    # 정리: 중복 제거
-    uniq, seen = [], set()
-    for c in colors:
-        if c and not _SIZE_PATTERN.match(c) and c not in seen:
-            seen.add(c)
-            uniq.append(c)
-    
-    print(f"    [DEBUG] Final colors extracted: {uniq}")
-    return uniq
-
 # ========= 상세: 가격/이미지들/컬러 =========
 def download_images(
     img_urls: List[str],
@@ -550,7 +381,7 @@ def download_images(
     os.makedirs(folder2, exist_ok=True)
 
     headers = {"User-Agent": "Mozilla/5.0"}
-    print(f"💬 image_urls: {img_urls}")
+    # print(f"💬 image_urls: {img_urls}")
     for idx, url in enumerate(img_urls, start=1):
         try:
             ext = ".jpg"
@@ -565,7 +396,7 @@ def download_images(
                 with open(filepath, "wb") as f:
                     f.write(r.content)
                 saved_paths.append(filepath)
-                print("✅ Images are downloaded!")
+                # print("✅ Images are downloaded!")
         except Exception as e:
             print(f"[WARN] image download failed: {url} ({e})")
 
@@ -619,7 +450,7 @@ def parse_detail(driver, url: str) -> Tuple[str, List[str], List[str], str]:
                 image_urls.append(src)
 
     # 3) 컬러 옵션(컬러만)
-    colors = extract_colors(driver)  # 사이즈 필터링 반영
+    # colors = extract_colors(driver)  # 사이즈 필터링 반영
 
     # 정리: 중복 제거
     def dedup(seq):
@@ -629,9 +460,9 @@ def parse_detail(driver, url: str) -> Tuple[str, List[str], List[str], str]:
                 seen.add(x); out.append(x)
         return out
     image_urls = dedup(image_urls)
-    colors = dedup(colors)
+    # colors = dedup(colors)
 
-    return price_original, colors, image_urls, product_id
+    return price_original, image_urls, product_id
 
 # ========= 실행 파이프라인 =========
 def run_one_category(sub_cat_id: str, gf: str, style_id: int, texture_id: str, pattern_id: str, fit_id: str, gender: str, style_name: str,
@@ -654,20 +485,30 @@ def run_one_category(sub_cat_id: str, gf: str, style_id: int, texture_id: str, p
             ok = click_subcategory(driver, sub_cat_id)
             if not ok:
                 print("❌ 세부 카테고리 탭 클릭 실패")
+                return []
                 # 실패 시 URL 파라미터로 다시 진입 (폴백), 그 후 다시 클릭 시도
-                driver.get(build_category_url(gf, style_id, sub_cat_id))
-                WebDriverWait(driver, 8).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a.gtm-select-item[href*="/products/"]'))
-                )
-                re_ok = click_subcategory(driver, sub_cat_id)
-                if not re_ok:
-                    print("❌❌ 정말 실패")
+            #     driver.get(build_category_url(gf, style_id, sub_cat_id))
+            #     WebDriverWait(driver, 8).until(
+            #         EC.presence_of_element_located((By.CSS_SELECTOR, 'a.gtm-select-item[href*="/products/"]'))
+            #     )
+            #     re_ok = click_subcategory(driver, sub_cat_id)
+            #     if not re_ok:
+            #         print("❌❌ 정말 실패")
+            #     else:
+            #         print("✅ 세부 카테고리 탭 클릭 성공")
+            # else:
+            #     print("✅ 세부 카테고리 탭 클릭 성공")
 
         # 3) 이제 리스트 수집
         minimal = collect_list_minimals_unique(driver, need=NUM_COLLECT)
-
+        
+        if not minimal:
+            print(f"📌 수집할 상품이 없습니다: {gf}_{sub_cat_id}_{style_id}_{texture_id}_{pattern_id}_{fit_id}")
+            return []
+        
+        print(f"💬 {len(minimal)}개의 상품 수집 시작...")
         for idx, (_, brand, item_name, href) in enumerate(minimal, start=1):
-            price_o, colors, img_urls, pid2 = parse_detail(driver, href)
+            price_o, img_urls, pid2 = parse_detail(driver, href)
             SEEN_IDS.add(pid2)
 
             saved_paths = download_images(
@@ -693,7 +534,6 @@ def run_one_category(sub_cat_id: str, gf: str, style_id: int, texture_id: str, p
                 item_url=href,
                 brand=brand,
                 price=price_o,
-                color=colors,
                 img_dir=saved_paths,
                 img_url=img_urls,
                 style_id=style_id,
@@ -707,6 +547,7 @@ def run_one_category(sub_cat_id: str, gf: str, style_id: int, texture_id: str, p
                 seasonality="겨울" # 겨울로 고정
             )
             items.append(asdict(row))
+            print(f"➡️ {idx}번째 아이템 수집 완료!")
     finally:
         driver.quit()
     return items
@@ -722,7 +563,6 @@ def run_all(
     headless=True) -> List[Dict]:
     """
     gender: '남' or '여' (공용 제외)  → 무신사 파라미터는 'M'/'F'
-    style_id: 1~15
     각 세부 카테고리(‘전체’ 제외)를 순회하며 수집
     """
     gf_map = {"남": "M", "여": "F"}
@@ -793,6 +633,7 @@ if __name__ == "__main__":
     fit_id = args.fit_id
 
     for gender in ["남", "여"]:   # ✅ 공용 제외
+        print(f"💁‍♀️: {gender} 크롤링 시작")
         items = run_all(
             gender=gender, 
             style_id=style_id,
