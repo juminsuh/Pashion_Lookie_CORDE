@@ -29,47 +29,48 @@ def get_session(session_id: str):
 
 class PersonaReq(BaseModel):
     session_id: str
-    persona_key: str
+    persona_id: str
 
 class NegativeReq(BaseModel):
     session_id: str
     fit: list[str]
     pattern: list[str]
-    price_threshold: list[str]
+    price_threshold: int
 
 class TPOReq(BaseModel):
     session_id: str
     tpo_text: str
-
-class SelectReq(BaseModel):
-    session_id: str
-    item_id: str
 
 # ---------- APIs ----------
 
 @app.post("/step/persona")
 def select_persona(req: PersonaReq):
     state = get_session(req.session_id)
-    state["persona"] = PERSONA_MAP[req.persona_key]
-    return {"message": "persona saved"}
+    persona = PERSONA_MAP.get(req.persona_id)
+    if not persona:
+        return {"status": "error", "message": "persona not found"}
+    state["persona"] = persona
+    return {"status": "success", "persona": persona}
 
 @app.post("/step/negative")
 def save_negative(req: NegativeReq):
     state = get_session(req.session_id)
-    state["negative"] = {
+    negative = {
         "fit": req.fit,
         "pattern": req.pattern,
-        "price": req.price
+        "price": req.price_threshold
     }
-    return {"message": "negative saved"}
+    state["negative"] = negative
+    return {"status": "success", "negative": negative}
 
 @app.post("/step/tpo")
 def save_tpo(req: TPOReq):
     state = get_session(req.session_id)
-    state["parsed_tpo"] = parse_tpo(req.text)
-    return {"parsed_tpo": state["parsed_tpo"]}
+    parsed = parse_tpo(req.tpo_text)
+    state["parsed_tpo"] = parsed
+    return {"status": "parsing_done", "parsed_tpo": parsed}
 
-@app.post("/step/recommend")
+@app.get("/step/recommend")
 def recommend(session_id: str):
     state = get_session(session_id)
     
@@ -80,7 +81,7 @@ def recommend(session_id: str):
 
     context = (
         state["persona"]["선호 스타일"] + " " +
-        state["persona"]["선호 아이템"] + " " +
+        state["persona"]["선호하는 아이템 특징"] + " " +
         " ".join(state["parsed_tpo"]) + " " +
         " ".join(state["selected_items"])
     )
@@ -106,18 +107,53 @@ def recommend(session_id: str):
         ]
     }
 
+class SelectReqWithInfo(BaseModel):
+    session_id: str
+    item_id: str
+    main_cat_name: str
+    name: str
+    image_url: str
+
 @app.post("/step/select")
-def select_item(req: SelectReq):
+def select_item(req: SelectReqWithInfo):
     state = get_session(req.session_id)
-    state["selected_items"].append(req.item_id)
+    state["selected_items"].append({
+        "item_id": req.item_id,
+        "main_cat_name": req.main_cat_name,
+        "name": req.name,
+        "image_url": req.image_url
+    })
 
     idx = CATEGORY_ORDER.index(state["current_step"])
     if idx + 1 < len(CATEGORY_ORDER):
         state["current_step"] = CATEGORY_ORDER[idx + 1]
-
-    return {"next_category": state["current_step"]}
+        return {
+            "status": "selected",
+            "is_finished": False,
+            "next_category": state["current_step"]
+        }
+    else:
+        return {
+            "status": "selected",
+            "is_finished": True,
+            "next_category": None
+        }
 
 @app.get("/lookbook")
 def lookbook(session_id: str):
     state = get_session(session_id)
-    return {"items": state["selected_items"]}
+    return {
+        "user_persona": state["persona"],
+        "final_lookbook": [
+            {
+                "main_cat_name": item["main_cat_name"],
+                "name": item["name"],
+                "image_url": item["image_url"]
+            } for item in state["selected_items"]
+        ],
+        "message": "당신의 코디가 완성되었습니다!"
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
